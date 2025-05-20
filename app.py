@@ -1,35 +1,3 @@
-New Chat
-
-History
-
-Image To App
-
-Agents
-
-Create Agent
-
-Memories
-
-Support
-
-Blog
-
-Projects
-
-Mac Desktop App
-
-Agent IDE
-
-Docs
-
-Bookmarks
-
-
-Code
-
-Copy
-
-Download
 
 import os
 import cv2
