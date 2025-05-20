@@ -1,28 +1,25 @@
 import os
 import cv2
 import numpy as np
-from flask import Flask, request, send_from_directory, render_template_string, jsonify
+from flask import Flask, request, send_from_directory, render_template_string
 from werkzeug.utils import secure_filename
-import time
-from threading import Thread
 import logging
-from datetime import datetime
 
 # Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+# Flask setup
 app = Flask(__name__)
-app.config['UPLOAD_FOLDER'] = 'uploads'
-app.config['PROCESSED_FOLDER'] = 'processed'
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # Limit uploads to 16MB
 
-# Create directories if they don't exist
+# Use Render-compatible temp directories
+app.config['UPLOAD_FOLDER'] = '/tmp/uploads'
+app.config['PROCESSED_FOLDER'] = '/tmp/processed'
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB limit
+
+# Ensure directories exist
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 os.makedirs(app.config['PROCESSED_FOLDER'], exist_ok=True)
-
-# Job status tracking
-processing_jobs = {}
 
 # CSS Style
 CSS_STYLE = """ 
@@ -34,7 +31,7 @@ h1 { color: #333; }
 .error-message { color: red; }
 """
 
-# Index HTML
+# HTML Template
 INDEX_HTML = """ 
 <!DOCTYPE html>
 <html lang="en">
@@ -52,7 +49,7 @@ INDEX_HTML = """
             <div class="upload-area" onclick="document.getElementById('file-input').click()">
                 Click to select an image (max 16MB)
             </div>
-            <input type="file" id="file-input" name="image" accept="image/*" required>
+            <input type="file" id="file-input" name="image" accept="image/*" required style="display:none;">
             <button type="submit" class="button">Upload & Denoise</button>
         </form>
     </div>
@@ -60,20 +57,18 @@ INDEX_HTML = """
 </html>
 """
 
-# Image Processing Function
+# Image Processing
 def denoise_image(input_path, output_path):
-    """Apply denoising filters to the image."""
     try:
         image = cv2.imread(input_path)
         if image is None:
-            raise ValueError("Failed to load image.")
+            raise ValueError("Failed to load image. Make sure the file is a valid image.")
 
-        # Denoising using Non-Local Means
         denoised = cv2.fastNlMeansDenoisingColored(image, None, 10, 10, 7, 21)
         cv2.imwrite(output_path, denoised)
-        return True, "Processing completed successfully"
+        return True, "Image processed successfully."
     except Exception as e:
-        logger.error(f"Error processing image: {str(e)}")
+        logger.error(f"Error during image processing: {e}")
         return False, str(e)
 
 # Routes
@@ -81,23 +76,26 @@ def denoise_image(input_path, output_path):
 def index():
     if request.method == 'POST':
         if 'image' not in request.files:
-            return render_template_string(INDEX_HTML, css=CSS_STYLE, error="No file selected")
+            return render_template_string(INDEX_HTML, css=CSS_STYLE, error="No file uploaded.")
 
         file = request.files['image']
         if file.filename == '':
-            return render_template_string(INDEX_HTML, css=CSS_STYLE, error="No file selected")
+            return render_template_string(INDEX_HTML, css=CSS_STYLE, error="No file selected.")
 
         filename = secure_filename(file.filename)
         input_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         output_path = os.path.join(app.config['PROCESSED_FOLDER'], filename)
 
-        file.save(input_path)
-        success, message = denoise_image(input_path, output_path)
-
-        if success:
-            return f"Image processed successfully! <a href='/processed/{filename}'>Download</a>"
-        else:
-            return render_template_string(INDEX_HTML, css=CSS_STYLE, error=message)
+        try:
+            file.save(input_path)
+            success, message = denoise_image(input_path, output_path)
+            if success:
+                return f"Image processed successfully! <a href='/processed/{filename}'>Download</a>"
+            else:
+                return render_template_string(INDEX_HTML, css=CSS_STYLE, error=message)
+        except Exception as e:
+            logger.error(f"File handling error: {e}")
+            return render_template_string(INDEX_HTML, css=CSS_STYLE, error="An error occurred during upload or processing.")
 
     return render_template_string(INDEX_HTML, css=CSS_STYLE)
 
@@ -105,6 +103,7 @@ def index():
 def processed_file(filename):
     return send_from_directory(app.config['PROCESSED_FOLDER'], filename)
 
-# Run the Flask app
+# App entry point
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port)
